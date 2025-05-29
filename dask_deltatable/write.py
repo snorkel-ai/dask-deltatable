@@ -206,6 +206,7 @@ def to_deltalake(
         raise NotImplementedError("mode='overwrite' is not implemented")
     written = df.map_partitions(
         _write_partition,
+        table_or_uri=table_or_uri,
         schema=schema,
         partitioning=partitioning,
         current_version=current_version,
@@ -217,11 +218,10 @@ def to_deltalake(
         filesystem=filesystem,
         max_partitions=max_partitions,
         meta=(None, object),
-        table=table,
         configuration=configuration,
+        storage_options=storage_options,
     )
     result = dask.delayed(_commit, name="deltatable-commit")(
-        table,
         written,
         table_uri,
         schema,
@@ -241,7 +241,6 @@ def to_deltalake(
 
 
 def _commit(
-    table,
     schemas_add_actions_nested,
     table_uri,
     schema,
@@ -254,6 +253,7 @@ def _commit(
     partition_filters,
     custom_metadata,
 ):
+    table, _ = try_get_table_and_table_uri(table_uri, storage_options)
     schemas = list(flatten(pluck(0, schemas_add_actions_nested)))
     add_actions = list(flatten(pluck(1, schemas_add_actions_nested)))
     # TODO: What should the behavior be if the schema is provided? Cast the
@@ -293,6 +293,7 @@ def _commit(
 def _write_partition(
     df,
     *,
+    table_or_uri,
     schema,
     partitioning,
     current_version,
@@ -303,9 +304,10 @@ def _write_partition(
     max_rows_per_group,
     filesystem,
     max_partitions,
-    table,
     configuration,
+    storage_options,
 ) -> tuple[pa.Schema, list[AddAction]]:
+    table, _ = try_get_table_and_table_uri(table_or_uri, storage_options)
     if schema is None:
         #
         schema = pyarrow_to_deltalake(pa.Schema.from_pandas(df))
